@@ -74,6 +74,24 @@ def draw_points(
         cv2.circle(frame, (x, y), 3, color, 3, cv2.FILLED)
 
 
+def draw_texts(
+    frame: NDArray,
+    points: OperationPoints,
+    mtx: NDArray,
+    dist: NDArray,
+    color=(0, 0, 255),
+):
+    font = cv2.FONT_HERSHEY_PLAIN
+    font_scale = 1
+    thickness = 1
+    for k, v in points.items():
+        x, y = project_3d_to_2d(v, mtx, dist).squeeze().astype(np.int32)
+        ((w, h), length) = cv2.getTextSize(k, font, font_scale, thickness)
+        x -= w // 2
+        cv2.putText(frame, k, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, color, 1)
+        # cv2.circle(frame, (x, y), 3, color, 3, cv2.FILLED)
+
+
 def init_op_points(offset_table, max_size=50):
     res: MeanOperationPoints = dict()
     for k, v in offset_table.items():
@@ -104,7 +122,7 @@ libraryHD = 11
 
 csv_file = os.path.dirname(__file__) + "\\" + "cad_points.csv"
 offsets = read_offset_table(csv_file)
-mean_op_points = init_op_points(offsets)
+mean_op_points = init_op_points(offsets, max_size=10)
 
 while True:
     # frame = cv2.imread("save.jpg")
@@ -131,7 +149,8 @@ while True:
     raw_op_points = calc_offset_points((vx, vy, vz), tag0, offsets)
     update_mean_op_points(mean_op_points, raw_op_points)
     op_points = get_mean_op_points(mean_op_points)
-    draw_points(frame, op_points, mtx, dist)
+    # draw_points(frame, op_points, mtx, dist)
+    draw_texts(frame, op_points, mtx, dist)
 
     points = project_3d_to_2d(tvecs, mtx, dist)
     points = points.astype(np.int32)
