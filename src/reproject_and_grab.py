@@ -6,13 +6,69 @@ from marker_utils import solve_marker_pnp
 import typing as T
 from transformations import *
 import os
-from realsense import RealSenseCamera
 import time
 from collections import deque
+from arm_control import *
 
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:0.2f}".format})
 
 MeanOperationPoints = T.Dict[str, deque[tuple[float, float, float]]]
+
+
+def init_arm(arm):
+    init_base_coords = [363.9, -90.4, 243.7, 180, 0.0, 0]
+    init_angles = [11.79, 18.04, 0.0, -107.98, -83.68, 80.62, 65.45]
+    # arm.send_base_coords(init_base_coords, 80)
+    arm.send_angles(init_angles, 50)
+    time.sleep(5)
+
+    pump_off(arm)
+    time.sleep(0.5)
+
+    arm.set_tool_reference([0, 0, 70, 0, 0, 0])
+    time.sleep(0.05)
+    arm.set_end_type(1)
+
+
+def calc_new_coords(arm_coords, tvecs) -> T.Union[np.ndarray, None]:
+    # 单独算坐标
+    if arm_coords is None or len(arm_coords) != 6:
+        return None
+
+    mat = homo_transform_matrix(*arm_coords) @ homo_transform_matrix(0, 70, 0, 0, 0, 90)
+    rot = arm_coords[-3:]
+    p_end = np.vstack([np.reshape(tvecs[0], (3, 1)), 1])
+    p_base = np.squeeze((mat @ p_end)[:-1]).astype(int)
+    new_coords = np.concatenate([p_base, rot])
+    return new_coords
+
+
+def calc_target_coords(arm_coords, tvec, rvec) -> T.Union[np.ndarray, None]:
+    # 坐标+角度
+    if arm_coords is None or len(arm_coords) != 6:
+        return None
+    tvec = tvec.squeeze().tolist()
+    rvec = rvec.squeeze().tolist()
+    mat = (
+        homo_transform_matrix(*arm_coords)
+        @ homo_transform_matrix(0, 70, 0, 0, 0, 90)
+        @ homo_transform_matrix(*tvec, *rvec)
+    )
+    rot_mat = mat[:3, :3]
+    r: np.ndarray = cvt_rotation_matrix_to_euler_angle(rot_mat)
+    r = r * 180 / np.pi
+    t: np.ndarray = mat[:3, 3]
+    res = np.hstack([t.squeeze(), r.squeeze()])
+    return res
+
+
+def calc_xy_move_coords(
+    arm_coords: np.ndarray, target_move: np.ndarray
+) -> T.Union[np.ndarray, None]:
+    z_now = arm_coords[2]
+    new_coords = target_move.copy()
+    new_coords[2] = z_now
+    return new_coords
 
 
 def draw_frame(frame, base_vecs, point_3d, mtx, dist):
@@ -164,8 +220,11 @@ while True:
     raw_op_points = calc_offset_points((vx, vy, vz), tag0, offsets)
     update_mean_op_points(mean_op_points, raw_op_points)
     op_points = get_mean_op_points(mean_op_points)
+
+    print(op_points["Q"])
+
     # draw_points(frame, op_points, mtx, dist)
-    draw_texts(frame, op_points, mtx, dist)  # type: ignore
+    draw_texts(frame, op_points, mtx, dist)
 
     points = project_3d_to_2d(tvecs, mtx, dist)
     points = points.astype(np.int32)

@@ -139,3 +139,86 @@ def get_base_vector(base, x_vec, y_vec):
     vz = normalize_vec(vz)
 
     return vx, vy, vz
+
+
+def Rx(theta) -> NDArray:
+    return np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(theta), -np.sin(theta)],
+            [0, np.sin(theta), np.cos(theta)],
+        ]
+    )
+
+
+def Ry(theta) -> NDArray:
+    return np.array(
+        [
+            [np.cos(theta), 0, np.sin(theta)],
+            [0, 1, 0],
+            [-np.sin(theta), 0, np.cos(theta)],
+        ]
+    )
+
+
+def Rz(theta) -> NDArray:
+    return np.array(
+        [
+            [np.cos(theta), -np.sin(theta), 0],
+            [np.sin(theta), np.cos(theta), 0],
+            [0, 0, 1],
+        ]
+    )
+
+
+def degree2radian(degree):
+    return (degree / 180) * np.pi
+
+
+def rotation_matrix(rx, ry, rz, order="ZYX") -> NDArray:
+    order = order.upper()
+    if len(order) != 3 or set(order) != set("XYZ"):
+        raise Exception("Order must be string of component of XYZ or xyz")
+    mat = np.identity(3)
+    rx = degree2radian(rx)
+    ry = degree2radian(ry)
+    rz = degree2radian(rz)
+    for c in order:
+        if c == "X":
+            mat = mat @ Rx(rx)
+        elif c == "Y":
+            mat = mat @ Ry(ry)
+        elif c == "Z":
+            mat = mat @ Rz(rz)
+    return mat
+
+
+def homo_transform_matrix(x, y, z, rx, ry, rz, order="ZYX") -> NDArray:
+    rot_mat = rotation_matrix(rx, ry, rz, order=order)
+    trans_vec = np.array([[x, y, z, 1]]).T
+    mat = np.vstack([rot_mat, np.zeros((1, 3))])
+    mat = np.hstack([mat, trans_vec])
+    return mat
+
+
+def get_angle_from_rect(corners: NDArray) -> float:
+    center, size, angle = cv2.minAreaRect(corners)
+    return angle
+
+
+def cvt_rotation_matrix_to_euler_angle(rotation_matrix):
+    euler_angle = np.zeros(3)
+    euler_angle[2] = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+
+    f_cos_roll = np.cos(euler_angle[2])
+    f_sin_roll = np.sin(euler_angle[2])
+
+    euler_angle[1] = np.arctan2(
+        -rotation_matrix[2, 0],
+        (f_cos_roll * rotation_matrix[0, 0]) + (f_sin_roll * rotation_matrix[1, 0]),
+    )
+    euler_angle[0] = np.arctan2(
+        (f_sin_roll * rotation_matrix[0, 2]) - (f_cos_roll * rotation_matrix[1, 2]),
+        (-f_sin_roll * rotation_matrix[0, 1]) + (f_cos_roll * rotation_matrix[1, 1]),
+    )
+    return euler_angle

@@ -31,7 +31,6 @@ class UVCCamera:
 
     def update_frame(self) -> bool:
         ret, self.curr_color_frame = self.cap.read()
-        ret: bool
         return ret
 
     def color_frame(self) -> T.Union[NDArray, None]:
@@ -45,11 +44,9 @@ class UVCCamera:
 
 
 if __name__ == "__main__":
-    cam = UVCCamera(1)
+    cam = UVCCamera(0, capture_size=(2560, 1440), fps=30)
     cam.capture()
     libraryHD = 11
-    camera_params = np.load("camera_params_2d.npz")
-    mtx, dist = camera_params["mtx"], camera_params["dist"]
     while True:
         if not cam.update_frame():
             continue
