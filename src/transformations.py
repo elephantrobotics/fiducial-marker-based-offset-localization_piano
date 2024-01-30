@@ -62,7 +62,7 @@ def project_3d_to_2d(point_3d, mtx, dist):
 
     # Project 3D points to 2D image plane
     points_2d, _ = cv2.projectPoints(points_3d, rvec, tvec, mtx, dist)
-    points_2d = undistort_points(points_2d, mtx, dist)
+    # points_2d = undistort_points(points_2d, mtx, dist)
     points_2d = points_2d.reshape((-1, 2))
     return points_2d
 
@@ -116,9 +116,12 @@ def pack_marker(ids: NDArray, rvecs: NDArray, tvecs: NDArray) -> MarkerPack:
     return res
 
 
-def interpolation_z(
+def calc_plane_z_from_xy(
     A: float, B: float, C: float, D: float, x: float, y: float
 ) -> float:
+    """
+    Based on plane parameters and x, y to interpolate z on the plane.
+    """
     return -(A * x + B * y + D) / C
 
 
@@ -126,13 +129,19 @@ def normalize_vec(v: NDArray) -> NDArray:
     return v / np.linalg.norm(v)  # type: ignore
 
 
-def get_base_vector(base, x_vec, y_vec):
-    A, B, C, D = plane_equation_from_points(base, x_vec, y_vec)
+def get_base_vector(base_point, x_point, y_point):
+    """
+    Get base vector from 3 point;
+    x direction is x_point - base_point
+    y direction is y_point - y_point
+    z direction is vx x vy
+    """
+    A, B, C, D = plane_equation_from_points(base_point, x_point, y_point)
     vz = np.array([A, B, C])
     vz = vz.reshape((3, 1))
 
-    vx = x_vec - base
-    vy = y_vec - base
+    vx = x_point - base_point
+    vy = y_point - base_point
 
     vx = normalize_vec(vx)
     vy = normalize_vec(vy)

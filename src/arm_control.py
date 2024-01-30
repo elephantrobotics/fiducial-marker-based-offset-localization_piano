@@ -1,9 +1,15 @@
-from pymycobot import CommandGenerator  # type: ignore
+from pymycobot import CommandGenerator, Mercury  # type: ignore
 import typing as T
-
-# import RPi.GPIO as GPIO
 import time
 
+def get_base_coords(arm : Mercury):
+    coords = None
+    for _ in range(5):
+        coords = arm.get_base_coords()
+        if coords is not None and len(coords) != 0:
+            break
+    
+    return coords
 
 def move_x_increment(arm: CommandGenerator, val: float):
     coords: T.Any = arm.get_coords()

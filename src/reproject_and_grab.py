@@ -10,9 +10,12 @@ import time
 from collections import deque
 from arm_control import *
 
+from pymycobot import Mercury
+from arm_control import *
+
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:0.2f}".format})
 
-MeanOperationPoints = T.Dict[str, deque[tuple[float, float, float]]]
+MeanOperationPoints = T.Dict[str, T.Deque[T.Tuple[float, float, float]]]
 
 
 def init_arm(arm):
@@ -35,7 +38,8 @@ def calc_new_coords(arm_coords, tvecs) -> T.Union[np.ndarray, None]:
     if arm_coords is None or len(arm_coords) != 6:
         return None
 
-    mat = homo_transform_matrix(*arm_coords) @ homo_transform_matrix(0, 70, 0, 0, 0, 90)
+    mat = homo_transform_matrix(*arm_coords) @ homo_transform_matrix(64.86, 0, -43, 0, 0, 180) @ homo_transform_matrix(-10, -10, 0, 0, 0, 0)
+    # mat = homo_transform_matrix(*arm_coords) @ homo_transform_matrix(64.86, 0, -43, 0, 0, 180)
     rot = arm_coords[-3:]
     p_end = np.vstack([np.reshape(tvecs[0], (3, 1)), 1])
     p_base = np.squeeze((mat @ p_end)[:-1]).astype(int)
@@ -51,7 +55,7 @@ def calc_target_coords(arm_coords, tvec, rvec) -> T.Union[np.ndarray, None]:
     rvec = rvec.squeeze().tolist()
     mat = (
         homo_transform_matrix(*arm_coords)
-        @ homo_transform_matrix(0, 70, 0, 0, 0, 90)
+        @ homo_transform_matrix(0, -70, 0, 0, 0, 90)
         @ homo_transform_matrix(*tvec, *rvec)
     )
     rot_mat = mat[:3, :3]
@@ -104,7 +108,7 @@ def draw_grid(frame, base_vecs, point_3d, mtx, dist):
             cv2.circle(frame, (x, y), 3, (0, 0, 255), 3, cv2.FILLED)
 
 
-def read_offset_table(filename: str):
+def read_offset_table(filename: str) -> OperationPoints:
     res: OperationPoints = {}
     with open(filename, "r") as f:
         t = f.read()
@@ -169,11 +173,6 @@ def get_mean_op_points(mean_op_points: MeanOperationPoints) -> OperationPoints:
     return res
 
 
-# cam = RealSenseCamera(capture_size=(1920, 1080), fps=30)
-# cam.capture()
-# mtx = np.array([[1367.86, 0, 937.803], [0, 1367.44, 563.887], [0, 0, 1]])
-# dist = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
-
 from uvc_camera import UVCCamera
 from pathlib import Path
 
@@ -184,24 +183,47 @@ cam.capture()
 
 params = np.load(str(path_prefix / Path("LRCP5020_params.npz")))
 mtx, dist = params["mtx"], params["dist"]
-
 libraryHD = 11
 
 csv_file = path_prefix / Path("cad_points.csv")
 offsets = read_offset_table(str(csv_file))
 mean_op_points = init_op_points(offsets, max_size=10)
 
-while True:
+right_arm = Mercury("/dev/ttyACM1")
+
+right_arm.set_tool_reference([0,0,59,0,0,0])
+time.sleep(0.03)
+right_arm.set_end_type(1)
+time.sleep(0.03)
+
+right_arm.send_angles([0,10,0,-90,-90,90,0], 50)
+time.sleep(3)
+
+# right_arm.send_base_coords([283.4, -0.1, 251.0, -179.72, -0.27, 94.0], 50)
+# time.sleep(5)
+
+# right_arm.send_angles([10.02, 34.28, 0.0, -117.17, -80.73, 84.05, -0.11], 50)
+# time.sleep(3)
+
+right_arm.send_angles([20.21, 36.55, 0.0, -112.5, -72.03, 78.54, -1.29], 50)
+time.sleep(3)
+
+for i in range(40):
     # frame = cv2.imread("save.jpg")
     cam.update_frame()
+    if i < 20:
+        time.sleep(0.1)
+        continue
+
     frame = cam.color_frame()
     if frame is None:
         time.sleep(0.1)
         continue
-    frame = cv2.flip(frame, -1)
-    cv2.imshow("preview", frame)
-    if cv2.waitKey(1) == ord("q"):
-        break
+
+    # frame = cv2.flip(frame, -1)
+    # cv2.imshow("preview", frame)
+    # if cv2.waitKey(1) == ord("q"):
+        # break
 
     (corners, ids, rejected_corners) = stag.detectMarkers(frame, libraryHD)  # type: ignore
     if len(ids) != 3:
@@ -212,6 +234,8 @@ while True:
 
     pack = pack_marker(ids, rvecs, tvecs)
     tag0, tag1, tag2 = pack[0][1], pack[1][1], pack[2][1]
+    print(tag0, tag1, tag2)
+
     vx, vy, vz = get_base_vector(tag0, tag1, tag2)
     print(f"vx:{vx.squeeze()} vy:{vy.squeeze()} vz:{vz.squeeze()}")
 
@@ -220,8 +244,6 @@ while True:
     raw_op_points = calc_offset_points((vx, vy, vz), tag0, offsets)
     update_mean_op_points(mean_op_points, raw_op_points)
     op_points = get_mean_op_points(mean_op_points)
-
-    print(op_points["Q"])
 
     # draw_points(frame, op_points, mtx, dist)
     draw_texts(frame, op_points, mtx, dist)
@@ -235,3 +257,19 @@ while True:
     cv2.imshow("result", frame)
     if cv2.waitKey(1) == ord("q"):
         break
+
+
+op_points = get_mean_op_points(mean_op_points)
+arm_base_coords = get_base_coords(right_arm)
+
+for c in "UIOPZXCV":
+    cam_coords = op_points[c]
+    new_base_coords = calc_new_coords(arm_base_coords, [cam_coords])
+    new_base_coords[2] -= 6
+    xy_coords = new_base_coords.copy()
+    xy_coords[2] += 50
+    print(new_base_coords)
+    right_arm.send_base_coords(xy_coords, 50)
+    time.sleep(4)
+    right_arm.send_base_coords(new_base_coords, 30)
+    right_arm.send_base_coords(xy_coords, 50)

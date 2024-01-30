@@ -6,13 +6,12 @@ from marker_utils import solve_marker_pnp
 import typing as T
 from transformations import *
 import os
-from realsense import RealSenseCamera
 import time
 from collections import deque
 
 np.set_printoptions(suppress=True, formatter={"float_kind": "{:0.2f}".format})
 
-MeanOperationPoints = T.Dict[str, deque[tuple[float, float, float]]]
+MeanOperationPoints = T.Dict[str, T.Deque[T.Tuple[float, float, float]]]
 
 
 def draw_frame(frame, base_vecs, point_3d, mtx, dist):
